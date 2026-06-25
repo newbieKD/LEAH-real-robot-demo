@@ -16,6 +16,10 @@ LEAH-real-robot-demo/
 
 `external/ur5e-ws` is a git submodule pointing to `https://github.com/tars3017/ur5e-ws`.
 
+## Development Rules
+
+Before adding bridge code or changing hardware behavior, read [AGENTS.md](AGENTS.md). In short: keep `external/ur5e-ws` read-only, add our integration code outside `external/`, and reuse upstream ROS2 interfaces through wrappers/configs.
+
 ## Laptop Deployment
 
 Clone with submodules on the physical robot laptop:

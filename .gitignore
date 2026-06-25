@@ -29,3 +29,6 @@ checkpoints/
 .DS_Store
 .vscode/
 .idea/
+
+# test
+test/
