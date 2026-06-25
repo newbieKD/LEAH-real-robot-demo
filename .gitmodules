@@ -1,0 +1,3 @@
+[submodule "external/ur5e-ws"]
+	path = external/ur5e-ws
+	url = https://github.com/tars3017/ur5e-ws

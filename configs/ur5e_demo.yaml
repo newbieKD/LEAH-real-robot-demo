@@ -1,0 +1,36 @@
+# Conservative default config for the OpenPI/CORA real-robot bridge.
+# The hardware operator must verify frames, topic names, action scaling, and
+# gripper width convention before enabling closed-loop execution.
+
+ros:
+  base_frame_id: world
+  ee_frame_id: rg2_base_link
+  target_pose_topic: /target_pose
+  gripper_command_topic: /gripper/command
+  gripper_width_topic: /gripper/width
+  rgb_topic: /camera/camera/color/image_raw
+  wrist_rgb_topic: ""
+
+policy:
+  host: 127.0.0.1
+  port: 8000
+  resize_size: 224
+  default_k: 5
+  max_queries: 30
+  query_period_s: 0.2
+
+action:
+  # OpenPI/LIBERO-style assumption: [dx, dy, dz, dRx, dRy, dRz, gripper].
+  control_frame: base
+  max_translation_step_m: 0.015
+  max_rotation_step_rad: 0.08
+  gripper_open_width_mm: 80.0
+  gripper_close_width_mm: 0.0
+  gripper_close_threshold: 0.0
+
+safety:
+  require_execute_flag: true
+  workspace_min_xyz_m: [0.15, -0.55, 0.05]
+  workspace_max_xyz_m: [0.85, 0.35, 0.65]
+  stop_on_policy_error: true
+  stop_on_missing_observation: true

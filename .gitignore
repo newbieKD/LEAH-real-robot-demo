@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local runtime config/secrets
+.env
+*.local.yaml
+configs/*local*.yaml
+
+# Robot/demo outputs
+data/
+logs/
+videos/
+recordings/
+rosbags/
+*.bag
+*.db3
+*.mcap
+
+# Model/checkpoint artifacts
+checkpoints/
+*.safetensors
+*.pth
+*.pt
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
