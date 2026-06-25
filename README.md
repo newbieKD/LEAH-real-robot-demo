@@ -66,29 +66,137 @@ UR5e IP:  192.168.56.101
 Gateway:  empty
 ```
 
-2. Start the UR5e hardware stack inside `external/ur5e-ws` according to its README.
+2. Build the upstream Docker image:
 
-3. On the GPU server, start the OpenPI policy server and bind it to localhost if possible.
+```bash
+cd external/ur5e-ws/docker
+docker compose build
+cd ../../..
+```
 
-4. On the laptop, create an SSH tunnel:
+3. Build the ROS2 workspace. On a robot laptop where the upstream compose stack works:
+
+```bash
+cd external/ur5e-ws/docker
+docker compose up -d
+docker compose exec ur5e-ws bash
+cd /home/user/ur5e-ws
+colcon build --symlink-install
+source install/setup.bash
+```
+
+On a camera-only laptop without NVIDIA runtime, use the host-side wrapper shell instead. This opens the same image without requiring the compose file's NVIDIA device reservation:
+
+```bash
+scripts/run_realsense_rgbd.sh --shell
+colcon build --symlink-install
+source install/setup.bash
+exit
+```
+
+4. Start the RGBD camera from the repo root on the host laptop:
+
+```bash
+scripts/run_realsense_rgbd.sh --enumerate
+scripts/run_realsense_rgbd.sh
+```
+
+To launch the same camera-only setup with the upstream RViz view:
+
+```bash
+xhost +local:docker
+scripts/run_realsense_rgbd.sh --rviz
+```
+
+To match the upstream script's calibration branch without starting easy-handeye:
+
+```bash
+scripts/run_realsense_rgbd.sh --calibration
+```
+
+Use this command whenever the goal is camera-only RGBD bringup, including on a full robot laptop with GPU and NVIDIA Container Toolkit installed. Do not run `external/ur5e-ws/scripts/realsense_bringup.sh` for this camera-only path, because that upstream script launches `realsense_launch/realsense.launch.py`, which also starts the easy-handeye publisher and expects `eye_on_base_calibration.calib`.
+
+`scripts/run_realsense_rgbd.sh` directly launches `realsense2_camera rs_launch.py`. It publishes RGBD topics such as `/camera/camera/rgbd`, disables pointcloud output, and does not start `easy_handeye2`; therefore `eye_on_base_calibration.calib` is not required.
+
+If you are already inside a prepared `ur5e-ws` container and want the same camera-only behavior manually, run:
+
+```bash
+cd /home/user/ur5e-ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  config_file:="''" \
+  initial_reset:=false \
+  enable_rgbd:=true \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=true \
+  enable_gyro:=false \
+  enable_accel:=false \
+  align_depth.enable:=true \
+  unite_imu_method:=0 \
+  pointcloud.enable:=false \
+  depth_module.depth_profile:=480x270x60 \
+  depth_module.infra_profile:=480x270x60 \
+  depth_module.depth_format:=Z16 \
+  rgb_camera.color_profile:=424x240x60 \
+  clip_distance:=8.0 \
+  hole_filling_filter.enable:=true
+```
+
+For RViz from inside the container, keep the camera launch running and open another container shell:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/user/ur5e-ws/install/setup.bash
+rviz2 -d "$(ros2 pkg prefix realsense_launch)/share/realsense_launch/rviz/realsense.rviz"
+```
+
+This uses the same RViz config as upstream. The only removed startup component is the easy-handeye publisher.
+
+5. Start the UR5e driver in a separate container shell:
+
+```bash
+cd external/ur5e-ws/docker
+docker compose exec ur5e-ws bash
+cd /home/user/ur5e-ws
+source install/setup.bash
+./scripts/ur_driver_bringup.sh
+```
+
+If compose cannot run on a no-GPU laptop, open an equivalent shell with `scripts/run_realsense_rgbd.sh --shell` from the repo root and run the same commands from `/home/user/ur5e-ws`.
+
+6. For the upstream record/replay pipeline, keep the RGBD camera and UR driver terminals running, then open another container shell:
+
+```bash
+cd /home/user/ur5e-ws
+source install/setup.bash
+./scripts/record_replay.sh /home/user/ur5e-ws/data 180.0
+```
+
+The record/replay script still starts servo and pose-tracking processes internally with `tmux`. The changed part is only camera bringup: use `scripts/run_realsense_rgbd.sh` instead of `./scripts/realsense_bringup.sh`.
+
+7. On the GPU server, start the OpenPI policy server and bind it to localhost if possible.
+
+8. On the laptop, create an SSH tunnel:
 
 ```bash
 scripts/start_policy_tunnel.sh user@our-gpu-server
 ```
 
-5. Run preflight checks:
+9. Run preflight checks:
 
 ```bash
 scripts/run_preflight.sh
 ```
 
-6. Start with policy dry-run:
+10. Start with policy dry-run:
 
 ```bash
 scripts/run_fixed_k_demo.sh --dry-run --prompt "pick up the block and place it in the bowl"
 ```
 
-7. Only after action scale/frame checks pass, run physical execution:
+11. Only after action scale/frame checks pass, run physical execution:
 
 ```bash
 scripts/run_fixed_k_demo.sh --execute --prompt "pick up the block and place it in the bowl"
