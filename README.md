@@ -67,7 +67,7 @@ Gateway:  empty
 ```
 
 2. Build the upstream Docker image:
-
+(can skip this)
 ```bash
 cd external/ur5e-ws/docker
 docker compose build
@@ -76,17 +76,24 @@ cd ../../..
 
 3. Build the ROS2 workspace. On a robot laptop where the upstream compose stack works:
 
+
 ```bash
+xhost +local:docker
 cd external/ur5e-ws/docker
 docker compose up -d
 docker compose exec ur5e-ws bash
+```
+
+
+```bash
 cd /home/user/ur5e-ws
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-On a camera-only laptop without NVIDIA runtime, use the host-side wrapper shell instead. This opens the same image without requiring the compose file's NVIDIA device reservation:
 
+On a camera-only laptop without NVIDIA runtime, use the host-side wrapper shell instead. This opens the same image without requiring the compose file's NVIDIA device reservation:
+(can skip this)
 ```bash
 scripts/run_realsense_rgbd.sh --shell
 colcon build --symlink-install
@@ -95,21 +102,21 @@ exit
 ```
 
 4. Start the RGBD camera from the repo root on the host laptop:
-
+(can skip this)
 ```bash
 scripts/run_realsense_rgbd.sh --enumerate
 scripts/run_realsense_rgbd.sh
 ```
 
 To launch the same camera-only setup with the upstream RViz view:
-
+(can skip this)
 ```bash
 xhost +local:docker
 scripts/run_realsense_rgbd.sh --rviz
 ```
 
 To match the upstream script's calibration branch without starting easy-handeye:
-
+(can skip this)
 ```bash
 scripts/run_realsense_rgbd.sh --calibration
 ```
@@ -118,12 +125,9 @@ Use this command whenever the goal is camera-only RGBD bringup, including on a f
 
 `scripts/run_realsense_rgbd.sh` directly launches `realsense2_camera rs_launch.py`. It publishes RGBD topics such as `/camera/camera/rgbd`, disables pointcloud output, and does not start `easy_handeye2`; therefore `eye_on_base_calibration.calib` is not required.
 
-If you are already inside a prepared `ur5e-ws` container and want the same camera-only behavior manually, run:
+* If you are already inside a prepared `ur5e-ws` container and want the same camera-only behavior manually, run:
 
 ```bash
-cd /home/user/ur5e-ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
 ros2 launch realsense2_camera rs_launch.py \
   config_file:="''" \
   initial_reset:=false \
@@ -147,21 +151,30 @@ ros2 launch realsense2_camera rs_launch.py \
 For RViz from inside the container, keep the camera launch running and open another container shell:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /home/user/ur5e-ws/install/setup.bash
+export LIBGL_ALWAYS_SOFTWARE=1
 rviz2 -d "$(ros2 pkg prefix realsense_launch)/share/realsense_launch/rviz/realsense.rviz"
 ```
 
 This uses the same RViz config as upstream. The only removed startup component is the easy-handeye publisher.
 
-5. Start the UR5e driver in a separate container shell:
+5. Start the UR5e/grip driver & moveit in a separate container shell:
 
 ```bash
-cd external/ur5e-ws/docker
-docker compose exec ur5e-ws bash
-cd /home/user/ur5e-ws
-source install/setup.bash
+
+# Terminal 1
+
+export LIBGL_ALWAYS_SOFTWARE=1
+# ur5 driver
 ./scripts/ur_driver_bringup.sh
+
+# Terminal 2
+export LIBGL_ALWAYS_SOFTWARE=1
+# grip driver
+ros2 launch onrobot_2fg_driver onrobot_2fg_driver.launch.py
+
+# Terminal 3
+export LIBGL_ALWAYS_SOFTWARE=1
+ros2 launch ur_moveit_config ur_moveit.launch.py launch_rviz:=true ur_type:=ur5e
 ```
 
 If compose cannot run on a no-GPU laptop, open an equivalent shell with `scripts/run_realsense_rgbd.sh --shell` from the repo root and run the same commands from `/home/user/ur5e-ws`.
