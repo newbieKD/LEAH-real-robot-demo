@@ -202,6 +202,171 @@ scripts/run_fixed_k_demo.sh --dry-run --prompt "pick up the block and place it i
 scripts/run_fixed_k_demo.sh --execute --prompt "pick up the block and place it in the bowl"
 ```
 
+## Manual Container Workflow
+
+Complete step-by-step commands for a person sitting at the laptop. Everything below assumes the repo is already cloned with submodules and the Docker image `tars3017cbc/ur5e-ws:latest` is present locally.
+
+### Enter the container
+
+**Path A — full robot laptop (NVIDIA GPU + NVIDIA Container Toolkit):**
+
+```bash
+xhost +local:docker
+cd external/ur5e-ws/docker
+docker compose up -d
+docker compose exec ur5e-ws bash
+# lands at /home/user/ur5e-ws inside the container
+```
+
+**Path B — camera-only or no NVIDIA Container Toolkit:**
+
+```bash
+# run from repo root
+scripts/run_realsense_rgbd.sh --shell
+# lands at /home/user/ur5e-ws inside the container
+```
+
+Both paths mount `external/ur5e-ws` as `/home/user/ur5e-ws` and share the host network (`--network host`). The container `.bashrc` auto-sources ROS2 and `install/setup.bash` on every interactive shell open, so you do not need to source them manually after the first build.
+
+### Build the workspace (first time only)
+
+Inside the container:
+
+```bash
+cd /home/user/ur5e-ws
+colcon build --symlink-install
+```
+
+Full build of all 24 packages takes about 40 seconds on this hardware. Deprecation warnings from `ur_controllers` and `ur_robot_driver` are expected and harmless. After the build, source the workspace for the current shell (subsequent shells source it automatically via `.bashrc`):
+
+```bash
+source install/setup.bash
+```
+
+### Open additional container shells
+
+Each component below runs in its own terminal tab. Open more shells into the same container:
+
+```bash
+# Path A:
+docker compose exec ur5e-ws bash
+
+# Path B:
+scripts/run_realsense_rgbd.sh --shell
+```
+
+### Terminal 1 — RealSense RGBD camera (run from HOST, repo root)
+
+Verify device is visible before starting:
+
+```bash
+scripts/run_realsense_rgbd.sh --enumerate
+```
+
+Start the RGBD node:
+
+```bash
+scripts/run_realsense_rgbd.sh
+```
+
+This directly launches `realsense2_camera rs_launch.py` (depth 480×270 Z16 @ 60 fps, color 424×240 RGB8 @ 60 fps) and does **not** start the easy-handeye publisher. No `eye_on_base_calibration.calib` file is required. Published topics include:
+
+```
+/camera/camera/rgbd
+/camera/camera/color/image_raw
+/camera/camera/aligned_depth_to_color/image_raw
+/camera/camera/depth/image_rect_raw
+```
+
+To view camera output in RViz (requires `xhost +local:docker` first):
+
+```bash
+scripts/run_realsense_rgbd.sh --rviz
+```
+
+### Terminal 2 — UR5e robot driver (inside container)
+
+Prerequisite: on the UR5e pendant, go to **Program → URCaps → External Control** and press Play.
+
+```bash
+cd /home/user/ur5e-ws
+./scripts/ur_driver_bringup.sh
+```
+
+Expands to:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+    ur_type:=ur5e \
+    robot_ip:=192.168.56.101 \
+    enable_rg2_gripper:=false \
+    launch_rviz:=true
+```
+
+### Terminal 3 — OnRobot 2FG gripper driver (inside container)
+
+```bash
+ros2 launch onrobot_2fg_driver onrobot_2fg_driver.launch.py
+```
+
+### Terminal 4 — MoveIt2 Servo (inside container)
+
+```bash
+ros2 launch ur_servo_control servo.launch.py
+```
+
+### Terminal 5 — Pose tracking node (inside container)
+
+```bash
+ros2 launch ur_pose_tracking ur_pose_tracking.launch.py
+```
+
+### Verify all required topics
+
+From any container shell, once all five terminals are running:
+
+```bash
+ros2 topic list
+```
+
+Required topics for the bridge to function:
+
+```
+/target_pose                   # consumed by ur_pose_tracking
+/servo_node/delta_twist_cmds   # servo twist command to UR driver
+/camera/camera/color/image_raw # RealSense RGB image
+/gripper/command               # OnRobot 2FG width command
+```
+
+Optional feedback topics:
+
+```
+/gripper/width
+/gripper/grip_detected
+```
+
+### Record/Replay pipeline (optional, inside container)
+
+Keep the RGBD camera (Terminal 1) and UR driver (Terminal 2) terminals running, then:
+
+```bash
+cd /home/user/ur5e-ws
+./scripts/record_replay.sh /home/user/ur5e-ws/data 180.0
+```
+
+The script internally starts `ur_servo_control` and `ur_pose_tracking` via `tmux`. Do not start Terminals 4 and 5 separately if you use this script.
+
+### One-time UR calibration extraction (new robot only)
+
+Run once when first connecting to a robot whose kinematics have not been extracted before:
+
+```bash
+cd /home/user/ur5e-ws
+./scripts/extract_ur_calibration.sh
+```
+
+Writes to `src/Universal_Robots_ROS2_Description/config/ur5/default_kinematics.yaml`.
+
 ## Safety Policy
 
 The first hardware milestone is fixed-K model validation, not adaptive-method comparison. Run the demo gates in order:
