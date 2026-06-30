@@ -125,7 +125,7 @@ Use this command whenever the goal is camera-only RGBD bringup, including on a f
 
 `scripts/run_realsense_rgbd.sh` directly launches `realsense2_camera rs_launch.py`. It publishes RGBD topics such as `/camera/camera/rgbd`, disables pointcloud output, and does not start `easy_handeye2`; therefore `eye_on_base_calibration.calib` is not required.
 
-* If you are already inside a prepared `ur5e-ws` container and want the same camera-only behavior manually, run:
+* If you are already inside a prepared `ur5e-ws` container and want the same camera-only behavior manually, run: (notice: plug in the realsense camera first and start the container, or "cannot find camera" error will occur)
 
 ```bash
 ros2 launch realsense2_camera rs_launch.py \
@@ -146,6 +146,40 @@ ros2 launch realsense2_camera rs_launch.py \
   rgb_camera.color_profile:=424x240x60 \
   clip_distance:=8.0 \
   hole_filling_filter.enable:=true
+```
+
+```
+# for pi05
+ros2 launch realsense2_camera rs_launch.py \
+  camera_name:=camera \
+  serial_no:=_317622074945 \
+  enable_rgbd:=true \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=true \
+  enable_gyro:=false \
+  enable_accel:=false \
+  align_depth.enable:=true \
+  pointcloud.enable:=false \
+  depth_module.depth_profile:=480x270x60 \
+  rgb_camera.color_profile:=424x240x60
+
+# 手腕相機（wrist）— D435i，Serial 348122071811
+
+# 新開一個 container shell：
+
+docker compose exec ur5e-ws bash
+
+ros2 launch realsense2_camera rs_launch.py \
+  camera_name:=wrist_camera \
+  serial_no:=_348122071811 \
+  enable_color:=true \
+  enable_depth:=false \
+  enable_sync:=false \
+  enable_gyro:=false \
+  enable_accel:=false \
+  pointcloud.enable:=false \
+  rgb_camera.color_profile:=424x240x60
 ```
 
 For RViz from inside the container, keep the camera launch running and open another container shell:
@@ -178,6 +212,54 @@ ros2 launch ur_moveit_config ur_moveit.launch.py launch_rviz:=true ur_type:=ur5e
 ```
 
 If compose cannot run on a no-GPU laptop, open an equivalent shell with `scripts/run_realsense_rgbd.sh --shell` from the repo root and run the same commands from `/home/user/ur5e-ws`.
+
+5.5. To record the data. First run the docker container and record the data to hdf5 file (notice: the data should be transformed to Lerobot format for training)
+
+```bash
+xhost +local:docker
+cd external/ur5e-ws/docker
+docker compose up -d
+docker compose exec ur5e-ws bash
+
+python3 /home/user/LEAH-real-robot-demo/scripts/collect_hdf5.py \
+  --output-dir /home/user/LEAH-real-robot-demo/data/hdf5 \
+  --hz 10 \
+  --seconds 30 \
+  --prompt "test2"
+```
+  To see wether the data is usable, you can run this command to show the actions
+
+```bash
+python3 - << 'EOF'
+import h5py, numpy as np
+
+path = "/home/user/LEAH-real-robot-demo/data/hdf5/episode_20260630_175931.hdf5"
+
+with h5py.File(path, "r") as f:
+    prompt=f.attrs["prompt"]; n=int(f.attrs["n_frames"]); hz=float(f.attrs["record_hz"])
+    top=f["observations/images/top"][:]; wrist=f["observations/images/wrist"][:]
+    states=f["observations/state"][:]; acts=f["actions"][:]; ts=f["timestamps"][:]
+
+print(f"prompt : {prompt}")
+print(f"frames : {n}  ({n/hz:.1f}s @ {hz}Hz)")
+print(f"\nShapes:")
+print(f"  top    {top.shape} {top.dtype}")
+print(f"  wrist  {wrist.shape} {wrist.dtype}")
+print(f"  state  {states.shape}  [x,y,z,qx,qy,qz,qw,grip]")
+print(f"  action {acts.shape}  [dx,dy,dz,dRx,dRy,dRz,grip]")
+print(f"\nState stats:")
+for i,lb in enumerate(["x","y","z","qx","qy","qz","qw","grip"]):
+    c=states[:,i]; print(f"  {lb:4s}: [{c.min():.4f}, {c.max():.4f}]  mean={c.mean():.4f}  std={c.std():.5f}")
+print(f"\nAction stats:")
+for i,lb in enumerate(["dx","dy","dz","dRx","dRy","dRz","grip"]):
+    c=acts[:,i]; print(f"  {lb:4s}: [{c.min():.6f}, {c.max():.6f}]  std={c.std():.6f}")
+dts=np.diff(ts)
+print(f"\nTiming: avg={dts.mean()*1000:.1f}ms  std={dts.std()*1000:.1f}ms  (target={1000/hz:.0f}ms)")
+grip=states[:,7]
+print(f"\nGripper: range=[{grip.min():.3f}, {grip.max():.3f}]  steps with |Δ|>0.01: {(np.abs(np.diff(grip))>0.01).sum()}")
+print(f"Images:  top mean={top.mean():.1f} std={top.std():.1f} | wrist mean={wrist.mean():.1f} std={wrist.std():.1f}")
+EOF
+```
 
 6. For the upstream record/replay pipeline, keep the RGBD camera and UR driver terminals running, then open another container shell:
 
@@ -391,3 +473,6 @@ The first hardware milestone is fixed-K model validation, not adaptive-method co
 5. LEAH/CORA adaptive execution comparison.
 
 If the trained checkpoint was not trained with this exact real-robot observation/action convention, do not run closed-loop execution until the action conversion is verified.
+
+
+

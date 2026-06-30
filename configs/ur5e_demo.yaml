@@ -3,13 +3,22 @@
 # gripper width convention before enabling closed-loop execution.
 
 ros:
-  base_frame_id: world
-  ee_frame_id: rg2_base_link
-  target_pose_topic: /target_pose
+  # joint-space control: policy outputs absolute joint angles → sent to joint trajectory controller
+  joint_state_topic: /joint_states
+  joint_command_topic: /scaled_joint_trajectory_controller/joint_trajectory
   gripper_command_topic: /gripper/command
   gripper_width_topic: /gripper/width
   rgb_topic: /camera/camera/color/image_raw
-  wrist_rgb_topic: ""
+  wrist_rgb_topic: /camera/wrist_camera/color/image_raw
+
+  # canonical UR5e joint order (must match collect_hdf5.py JOINT_NAMES)
+  joint_names:
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint
 
 policy:
   host: 127.0.0.1
@@ -20,17 +29,18 @@ policy:
   query_period_s: 0.2
 
 action:
-  # OpenPI/LIBERO-style assumption: [dx, dy, dz, dRx, dRy, dRz, gripper].
-  control_frame: base
-  max_translation_step_m: 0.015
-  max_rotation_step_rad: 0.08
+  # pi0.5 UR5 output: [q1, q2, q3, q4, q5, q6, gripper_norm] — absolute joint angles
+  space: joint
+  dof: 6
   gripper_open_width_mm: 80.0
   gripper_close_width_mm: 0.0
-  gripper_close_threshold: 0.0
+  # max joint delta per step (safety clamp applied before sending command)
+  max_joint_delta_rad: 0.1
 
 safety:
   require_execute_flag: true
-  workspace_min_xyz_m: [0.15, -0.55, 0.05]
-  workspace_max_xyz_m: [0.85, 0.35, 0.65]
+  # joint position limits (rad) — verify against your UR5e URDF
+  joint_pos_min_rad: [-6.28, -6.28, -3.14, -6.28, -6.28, -6.28]
+  joint_pos_max_rad: [ 6.28,  6.28,  3.14,  6.28,  6.28,  6.28]
   stop_on_policy_error: true
   stop_on_missing_observation: true
